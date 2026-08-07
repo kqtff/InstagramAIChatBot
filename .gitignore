@@ -1,0 +1,12 @@
+.env
+session.json
+state.json
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.Python
+.idea/
+.vscode/
+*.log
