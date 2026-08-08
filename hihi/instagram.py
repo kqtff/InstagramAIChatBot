@@ -4,44 +4,15 @@ import logging
 import re
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import unquote
 
 from instagrapi import Client
-from instagrapi.exceptions import (
-    BadPassword,
-    ChallengeRequired,
-    LoginRequired,
-    TwoFactorRequired,
-)
-from instagrapi.mixins.challenge import ChallengeChoice
 
 from hihi.config import SESSION_PATH
 
 log = logging.getLogger("hihi.instagram")
 
 MENTION_RE = re.compile(r"@([A-Za-z0-9._]+)")
-
-
-def _ask_email_code(username: str, choice=None) -> str:
-    """Console prompt for Instagram security code sent by email."""
-    via = "email"
-    if choice == ChallengeChoice.SMS or choice == 0:
-        via = "SMS"
-    elif choice == ChallengeChoice.EMAIL or choice == 1:
-        via = "email"
-    print()
-    print(f"Instagram sent a security code to your {via} for @{username}.")
-    print("Open your mail inbox and copy the code.")
-    while True:
-        try:
-            code = input("Email/SMS code: ").strip()
-        except EOFError as exc:
-            raise SystemExit(
-                "No console input. Run `python main.py` in a terminal and enter the code."
-            ) from exc
-        digits = re.sub(r"\D", "", code)
-        if len(digits) >= 6:
-            return digits
-        print("That doesn't look like a code. Try again (usually 6 digits).")
 
 
 @dataclass(frozen=True)
@@ -74,36 +45,25 @@ class InstagramSession:
     def __init__(
         self,
         username: str,
-        password: str,
         trigger_username: str,
-        sessionid: str = "",
+        sessionid: str,
     ) -> None:
         self.username = username.lstrip("@").lower()
-        self.password = password
         self.trigger_username = trigger_username.lstrip("@").lower()
-        self.sessionid = sessionid.strip()
+        self.sessionid = unquote(sessionid.strip().strip('"'))
         self.client = Client()
         self.client.delay_range = [0.5, 1.2]
-        self.client.challenge_code_handler = _ask_email_code
         self.my_user_id: str | None = None
         self.trigger_user_id: str | None = None
 
     def login(self) -> None:
-        if self.sessionid:
-            log.info("Logging in with IG_SESSIONID")
-            self._sessionid_login(self.sessionid)
-        elif SESSION_PATH.exists():
-            try:
-                self.client.load_settings(SESSION_PATH)
-                self.client.challenge_code_handler = _ask_email_code
-                self.client.get_timeline_feed()
-                log.info("Logged in with saved session as @%s", self.username)
-            except Exception as exc:  # noqa: BLE001
-                log.warning("Saved session failed (%s); need fresh login", exc)
-                self._fresh_client(wipe_session=False)
-                self._password_login()
-        else:
-            self._password_login()
+        if not self.sessionid:
+            raise SystemExit("Set IG_SESSIONID in .env (browser cookie). Password login is disabled.")
+        if len(self.sessionid) < 30:
+            raise SystemExit("IG_SESSIONID looks too short. Copy the full sessionid cookie value.")
+
+        log.info("Logging in with IG_SESSIONID from .env")
+        self._sessionid_login(self.sessionid)
 
         self.client.dump_settings(SESSION_PATH)
         self.my_user_id = str(self.client.user_id)
@@ -130,129 +90,33 @@ class InstagramSession:
             self.trigger_user_id,
         )
 
-    def _fresh_client(self, *, wipe_session: bool = True) -> None:
-        self.client = Client()
-        self.client.delay_range = [0.5, 1.2]
-        self.client.challenge_code_handler = _ask_email_code
-        if wipe_session and SESSION_PATH.exists():
-            try:
-                SESSION_PATH.unlink()
-            except OSError:
-                pass
-
     def _save_device(self) -> None:
-        """Persist uuids/device fingerprint so Instagram challenge retries match."""
         try:
             self.client.dump_settings(SESSION_PATH)
             log.info("Saved device settings to %s", SESSION_PATH.name)
         except OSError as exc:
             log.warning("Could not save session settings: %s", exc)
 
-    def _password_login(self) -> None:
-        # Reuse prior device fingerprint if we already challenged once
-        if SESSION_PATH.exists():
-            try:
-                self.client.load_settings(SESSION_PATH)
-                self.client.challenge_code_handler = _ask_email_code
-                log.info("Reusing saved device settings for login")
-            except Exception as exc:  # noqa: BLE001
-                log.warning("Could not load saved device settings: %s", exc)
-
-        log.info("Logging in with password for @%s", self.username)
-        try:
-            self.client.login(self.username, self.password)
-        except TwoFactorRequired:
-            code = _ask_email_code(self.username, ChallengeChoice.EMAIL)
-            log.info("Completing login with email/SMS code")
-            self.client.login(self.username, self.password, verification_code=code)
-        except ChallengeRequired as exc:
-            self._handle_native_challenge(exc)
-        except BadPassword as exc:
-            raise SystemExit(
-                "Instagram rejected the password login.\n"
-                f"{exc}\n"
-                "Confirm IG_PASSWORD in .env is correct, then run again.\n"
-                "If it keeps failing, log in once in the Instagram app/browser first."
-            ) from exc
-        except LoginRequired as exc:
-            raise SystemExit(f"Instagram login failed: {exc}") from exc
-
-        try:
-            self.client.get_timeline_feed()
-        except ChallengeRequired as exc:
-            self._handle_native_challenge(exc)
-            self.client.get_timeline_feed()
-        log.info("Password login OK for @%s", self.username)
-
-    def _handle_native_challenge(self, exc: ChallengeRequired) -> None:
-        """Native checkpoint — Instagram usually does NOT send an approve push for scripts."""
-        self._save_device()
-        challenge = {}
-        try:
-            challenge = getattr(exc, "challenge", None) or self.client.last_json.get("challenge") or {}
-        except Exception:  # noqa: BLE001
-            challenge = {}
-
-        api_path = str(challenge.get("api_path") or "")
-        web_url = ""
-        if api_path:
-            path = api_path if api_path.startswith("/") else f"/{api_path}"
-            web_url = f"https://www.instagram.com{path}"
-
-        print()
-        print("=" * 60)
-        print("Instagram blocked script password login.")
-        print("It often does NOT send a 'Was this you?' notification — that is normal.")
-        print()
-        print("Use browser sessionid instead (works):")
-        print(f"  1. Open Chrome and log into https://www.instagram.com as @{self.username}")
-        print("  2. Finish any checkpoint Instagram shows IN THE BROWSER")
-        if web_url:
-            print(f"     (try also: {web_url})")
-        print("  3. F12 → Application → Cookies → https://www.instagram.com")
-        print("  4. Copy the cookie named sessionid")
-        print("  5. Paste it below")
-        print("=" * 60)
-        print()
-
-        try:
-            sessionid = input("Paste sessionid: ").strip()
-        except EOFError as e:
-            raise SystemExit(
-                "No console input. Put IG_SESSIONID=... in .env after logging in via Chrome, "
-                "then run again."
-            ) from e
-        if not sessionid:
-            raise SystemExit(
-                "Need a browser sessionid. Log into Instagram in Chrome as "
-                f"@{self.username}, copy cookies → sessionid, put it in .env as IG_SESSIONID."
-            )
-        self._sessionid_login(sessionid)
-
     def _sessionid_login(self, sessionid: str) -> None:
-        from urllib.parse import unquote
-
-        sessionid = unquote(sessionid.strip().strip('"'))
-        if len(sessionid) < 30:
-            raise SystemExit("That sessionid looks too short. Copy the full cookie value.")
         try:
             if SESSION_PATH.exists():
                 try:
                     self.client.load_settings(SESSION_PATH)
                 except Exception as exc:  # noqa: BLE001
                     log.debug("load_settings before sessionid skipped: %s", exc)
-            self.client.challenge_code_handler = _ask_email_code
             self.client.login_by_sessionid(sessionid)
             # Timeline often 403s right after sessionid login; verify with account_info instead
             try:
                 me = self.client.account_info()
-                log.info("Logged in via sessionid as @%s", getattr(me, "username", self.client.username))
+                log.info(
+                    "Logged in via sessionid as @%s",
+                    getattr(me, "username", self.client.username),
+                )
             except Exception:
                 try:
                     self.client.get_timeline_feed()
                     log.info("Logged in via sessionid as @%s", self.client.username)
                 except Exception as err:  # noqa: BLE001
-                    # user_info during login_by_sessionid already succeeded for many accounts
                     if self.client.user_id:
                         log.warning(
                             "Timeline/account check failed (%s); continuing with session user_id=%s",
@@ -267,7 +131,8 @@ class InstagramSession:
         except Exception as err:  # noqa: BLE001
             raise SystemExit(
                 f"sessionid login failed: {err}\n"
-                "Log into Instagram in the browser again, copy a fresh sessionid, retry."
+                "Log into Instagram in the browser again, copy a fresh sessionid into "
+                "IG_SESSIONID in .env, then retry."
             ) from err
 
     def find_tag_events(self) -> list[TagEvent]:

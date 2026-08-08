@@ -1,12 +1,12 @@
 # HIHI
 
-Local Python bot: logs into Instagram as **@drjonnynp** over HTTP (`instagrapi`, no Chrome). When **@sudeep_wtf** tags or @mentions the bot account, it starts a DM and chats with **Groq**.
+Local Python bot: logs into Instagram as **@drjonnynp** over HTTP (`instagrapi`, no Chrome) using a browser **`sessionid`** from `.env`. When **@sudeep_wtf** tags or @mentions the bot account, it starts a DM and chats with **Groq**.
 
 ## Warning
 
 This uses Instagram’s **unofficial private API**. It can get the account challenged, locked, or banned. Use at your own risk. Prefer testing carefully and keeping the poll interval slow.
 
-Never commit `.env` — it holds your Instagram password and API keys.
+Never commit `.env` — it holds your Instagram session cookie and API keys.
 
 ## Setup
 
@@ -20,25 +20,26 @@ copy .env.example .env
 
 Edit `.env`:
 
-- `IG_USERNAME` / `IG_PASSWORD` — bot account (`drjonnynp`)
+- `IG_USERNAME` — bot account (`drjonnynp`)
+- `IG_SESSIONID` — browser `sessionid` cookie (required; password login is disabled)
 - `TRIGGER_USERNAME` — who must tag you (`sudeep_wtf`)
 - `GROQ_API_KEY` — from [console.groq.com](https://console.groq.com/)
 - `GROQ_MODEL` — default `llama-3.3-70b-versatile`
+
+### Get `IG_SESSIONID`
+
+1. Log into https://www.instagram.com in Chrome as the bot account
+2. Finish any checkpoint in the browser
+3. F12 → Application → Cookies → `https://www.instagram.com` → copy `sessionid`
+4. Paste into `.env` as `IG_SESSIONID=...`
+
+When the cookie expires, refresh it the same way and update `.env`.
 
 ## Run
 
 ```powershell
 python main.py
 ```
-
-On first login HIHI uses the password from `.env`.
-
-If Instagram blocks password login (common — it often does **not** send an approve notification), HIHI asks for a browser **`sessionid`**:
-
-1. Log into https://www.instagram.com in Chrome as the bot account
-2. Finish any checkpoint in the browser
-3. F12 → Application → Cookies → copy `sessionid`
-4. Paste it when asked (or set `IG_SESSIONID` in `.env`)
 
 ## Behavior
 

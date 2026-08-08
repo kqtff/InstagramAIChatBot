@@ -26,7 +26,6 @@ DEFAULT_SYSTEM_PROMPT = (
 @dataclass(frozen=True)
 class Config:
     ig_username: str
-    ig_password: str
     ig_sessionid: str
     trigger_username: str
     wake_word: str
@@ -41,7 +40,6 @@ def load_config() -> Config:
     load_dotenv(ROOT / ".env")
 
     ig_username = os.getenv("IG_USERNAME", "").strip().lstrip("@")
-    ig_password = os.getenv("IG_PASSWORD", "").strip()
     ig_sessionid = unquote(os.getenv("IG_SESSIONID", "").strip().strip('"'))
     trigger_username = os.getenv("TRIGGER_USERNAME", "sudeep_wtf").strip().lstrip("@")
     wake_word = os.getenv("WAKE_WORD", "Mika").strip() or "Mika"
@@ -55,12 +53,11 @@ def load_config() -> Config:
         name
         for name, value in [
             ("IG_USERNAME", ig_username),
+            ("IG_SESSIONID", ig_sessionid),
             ("GROQ_API_KEY", groq_api_key),
         ]
         if not value
     ]
-    if not ig_sessionid and not ig_password:
-        missing.append("IG_SESSIONID or IG_PASSWORD")
     if missing:
         raise SystemExit(
             f"Missing required env vars: {', '.join(missing)}. "
@@ -75,7 +72,6 @@ def load_config() -> Config:
 
     return Config(
         ig_username=ig_username,
-        ig_password=ig_password,
         ig_sessionid=ig_sessionid,
         trigger_username=trigger_username,
         wake_word=wake_word,

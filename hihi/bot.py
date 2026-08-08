@@ -79,7 +79,6 @@ class Bot:
         self.config = config
         self.ig = InstagramSession(
             username=config.ig_username,
-            password=config.ig_password,
             trigger_username=config.trigger_username,
             sessionid=config.ig_sessionid,
         )
