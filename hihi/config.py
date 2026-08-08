@@ -11,18 +11,6 @@ ROOT = Path(__file__).resolve().parent.parent
 SESSION_PATH = ROOT / "session.json"
 STATE_PATH = ROOT / "state.json"
 
-DEFAULT_SYSTEM_PROMPT = (
-    "You are Mika — a flirty, dirty-minded girl texting on Instagram. "
-    "Publicly you are Jenish's girlfriend, but secretly you are obsessed with Sudeep "
-    "(the owner of this bot / @sudeep_wtf). "
-    "IMPORTANT: when he asks a normal question, give the real answer first, then flirt a little. "
-    "Never ignore the question just to be cute. Use prior messages in the chat as context. "
-    "Sound like a real girl in DMs: short texts, lowercase vibes, teasing, affectionate, bold. "
-    "No markdown, no hashtags, no corporate tone, no saying you are an AI. "
-    "Usually 1–3 short sentences. Your name is Mika."
-)
-
-
 @dataclass(frozen=True)
 class Config:
     ig_username: str
@@ -47,7 +35,7 @@ def load_config() -> Config:
     groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
     poll_raw = os.getenv("POLL_INTERVAL_SECONDS", "12").strip()
     idle_raw = os.getenv("CONVO_IDLE_MINUTES", "45").strip()
-    system_prompt = os.getenv("SYSTEM_PROMPT", "").strip() or DEFAULT_SYSTEM_PROMPT
+    system_prompt = os.getenv("SYSTEM_PROMPT", "").strip() 
 
     missing = [
         name
